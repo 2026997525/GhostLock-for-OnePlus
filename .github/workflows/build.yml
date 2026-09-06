@@ -1,62 +1,27 @@
-name: Build ghostlock
+- name: Setup NDK
+  uses: nttld/setup-ndk@v1
+  id: setup-ndk
+  with:
+    ndk-version: r25c
 
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
+- name: Set NDK environment
+  run: |
+    echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+    echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+    echo "NDK=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
+- name: Create compiler symlink and set target
+  run: |
+    NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    ln -s "$NDK_BIN/clang" "$NDK_BIN/aarch64-linux-android35-clang"
+    echo "CFLAGS=--target=aarch64-linux-android35" >> $GITHUB_ENV
+    echo "LDFLAGS=--target=aarch64-linux-android35" >> $GITHUB_ENV
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5   # 升级到 v5 消除警告
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+- name: Build (verbose)
+  run: |
+    make V=1 2>&1 | tee build.log
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup NDK (r25c)
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r25c   # 或改为 r26d
-
-      - name: Set NDK environment variables
-        run: |
-          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
-          echo "NDK=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
-
-      - name: Debug - list NDK bin files
-        run: |
-          ls -l $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/ | head -20
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
-
-      - name: Build (verbose)
-        run: |
-          make V=1 2>&1 | tee build.log
-
-      - name: Upload build log if failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-
-      - name: Upload executable
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ghostlock-elf
-          path: ghostlock
+- name: List build output
+  run: |
+    ls -la ghostlock || echo "ghostlock not found in current directory"
+    find . -name "ghostlock" -type f
